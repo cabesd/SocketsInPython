@@ -2,6 +2,7 @@ import socket
 import time
 import threading
 import argparse
+import ipaddress
 
 
 '''
@@ -62,11 +63,13 @@ import argparse
 def myip():
     hostname = socket.gethostname()
     IPAddr = socket.gethostbyname(hostname)
+    print(ipaddress.ip_address(IPAddr))
     return IPAddr
 
 
 def myport():
-    pass
+    sock = socket.socket()
+    return sock.getsockname()[1]
 
 
 def connect(dest, port):
@@ -93,16 +96,14 @@ def exit():
     pass
 
 
-def run_client():
+def run_client(port):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    host = socket.gethostname()
-    port = 9990
-    s.connect((host, port))
+    s.connect((myip(), port))
     s.setblocking(0)
     msg = ''
     while len(msg) == 0:
         try:
-            msg = s.recv(1024)
+            msg = s.recv(100)
             break
         except BlockingIOError:
             print("Message length = 0")
@@ -117,6 +118,7 @@ def run_server(port):
     print("Socket successfully created")
     host = myip()
     s.bind((host, port))
+    # s.bind(('', port))
     print("socket binded to %s" % (port))
 
     s.listen(5)
@@ -136,8 +138,11 @@ if __name__ == "__main__":
     parser.add_argument('--port', help='specifies the port that you want to communicate on', required=True, type=int)
     args = parser.parse_args()
 
+    print(myip())
+
     t = threading.Thread(group=None, target=run_server, name=None, args=(args.port))
-    run_server(args.port)
+
+    run_client(args.port)
 
 
 
