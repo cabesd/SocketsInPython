@@ -1,8 +1,33 @@
-# first of all import the socket library
 import socket
-import argparse
 import time
+import threading
+import argparse
 
+class ChatRoom:
+
+    def __init__(self):
+        pass
+
+    def help(self):
+        pass
+
+    def myip(self):
+        pass
+
+    def myport(self):
+        pass
+
+    def connect(self, dest, port):
+        pass
+
+    def list(self):
+        pass
+
+    def terminate(self):
+        pass
+
+    def send(self, msg):
+        pass
 
 def run_client():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
