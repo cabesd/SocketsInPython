@@ -59,109 +59,85 @@ import argparse
 '''
 
 
-class ChatRoomClient:
-
-    def __init__(self):
-        # When this process is spawned, it should block until it gets the current state of chat to populate its data
-        pass
-
-    def help(self):
-        pass
-
-    def client_ip(self):
-        pass
-
-    def client_port(self):
-        pass
-
-    def connect(self, dest, port):
-        pass
-
-    def list(self):
-        pass
-
-    def terminate(self):
-        pass
-
-    def send(self, msg):
-        pass
-
-    def run(self):
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        host = '0.0.0.0' #socket.gethostname()
-        port = 9990
-        s.connect((host, port))
-        s.setblocking(0)
-        msg = ''
-        while len(msg) == 0:
-            try:
-                msg = s.recv(1024)
-                break
-            except BlockingIOError:
-                print("Message length = 0")
-                pass
-        print(msg.decode('ascii'))
-        s.close()
+def myip():
+    hostname = socket.gethostname()
+    IPAddr = socket.gethostbyname(hostname)
+    return IPAddr
 
 
-class ChatRoomServer:
+def myport():
+    pass
 
-    def __init__(self):
-        pass
 
-    def run(self):
-        pass
+def connect(dest, port):
+    pass
 
-    def help(self):
-        pass
 
-    def server_ip(self):
-        pass
+def list():
+    pass
 
-    def server_port(self):
-        pass
 
-    def list(self):
-        pass
+def terminate():
+    pass
 
-    def terminate(self):
-        pass
 
-    def send(self, msg):
-        pass
+def send(msg):
+    pass
 
-    def run(self):
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        print("Socket successfully created")
-        host = '0.0.0.0' # socket.gethostname()
-        port = 9990
-        s.bind((host, port))
-        print("socket binded to %s" % (port))
 
-        s.listen(5)
-        print("socket is listening")
-        while True:
-            c, addr = s.accept()
-            print('Got connection from', addr)
-            data = {'test': 'msg'}
-            msg = str(data)
-            time.sleep(2)
-            c.send(msg.encode("ascii"))
-            c.close()
+def help():
+    pass
+
+
+def exit():
+    pass
+
+
+def run_client():
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    host = socket.gethostname()
+    port = 9990
+    s.connect((host, port))
+    s.setblocking(0)
+    msg = ''
+    while len(msg) == 0:
+        try:
+            msg = s.recv(1024)
+            break
+        except BlockingIOError:
+            print("Message length = 0")
+            pass
+    print(msg.decode('ascii'))
+    s.close()
+
+
+def run_server(port):
+
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    print("Socket successfully created")
+    host = myip()
+    s.bind((host, port))
+    print("socket binded to %s" % (port))
+
+    s.listen(5)
+    print("socket is listening")
+    while True:
+        c, addr = s.accept()
+        print('Got connection from', addr)
+        data = {'test': 'msg'}
+        msg = str(data)
+        time.sleep(2)
+        c.send(msg.encode("ascii"))
+        c.close()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--mode', help='Run server', required=True, action='store_true')
+    parser.add_argument('--port', help='specifies the port that you want to communicate on', required=True, type=int)
     args = parser.parse_args()
 
-    if args.server:
-        server = ChatRoomServer()
-        print("server woudl have ran")
-        server.run()
-        exit(0)
-    else:
-        client = ChatRoomClient()
-        print("client would have ran")
-        exit(0)
-        client.run()
+    t = threading.Thread(group=None, target=run_server, name=None, args=(args.port))
+    run_server(args.port)
+
+
+
