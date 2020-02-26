@@ -152,12 +152,16 @@ class ChatRoomServer:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--server', help='Run server', action='store_true')
+    parser.add_argument('--mode', help='Run server', required=True, action='store_true')
     args = parser.parse_args()
 
     if args.server:
         server = ChatRoomServer()
+        print("server woudl have ran")
         server.run()
+        exit(0)
     else:
         client = ChatRoomClient()
+        print("client would have ran")
+        exit(0)
         client.run()
