@@ -86,7 +86,7 @@ class Peer:
             # print("Checking messages from {}".format(self.connections))
             c, addr = s.accept()
             print("Message received from {addr}")
-            msg = c.recv()
+            msg = c.recv(100)
             print(msg.decode("ascii"))
             c.close()
 
