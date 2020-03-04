@@ -69,12 +69,13 @@ class peer():
         pass
 
     def check_inbox(self):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind(('0.0.0.0', int(self.myport)))
         while self.is_running:
 
             # I think here we want to be able to accept as many connections as possible
 
-
-            #s.listen('', port)
+            s.listen(1024)
             print("Checking messages from {}".format(self.connections))
             time.sleep(3)
 
