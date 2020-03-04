@@ -76,8 +76,8 @@ class peer():
             # I think here we want to be able to accept as many connections as possible
 
             s.listen(1024)
-            print("Checking messages from {}".format(self.connections))
-            time.sleep(3)
+            # print("Checking messages from {}".format(self.connections))
+            time.sleep(1)
 
 
 if __name__ == "__main__":
