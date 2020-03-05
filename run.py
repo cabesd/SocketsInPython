@@ -58,6 +58,7 @@ class Peer:
     def func_connect(self):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.connect((self._args[1], int(self._args[2])))
+        s.setblocking(0)
         self.sockets.append(s)
         self.connections.append([self._args[1], int(self._args[2])])
         print(f"Connect {self._args}")
@@ -82,8 +83,8 @@ class Peer:
     def func_send(self):
         """ Send a message to a specific connection id"""
         idx = int(self._args[1])
-        msg = self._args[1:]
-        self.sockets[idx].send(msg)
+        msg = " ".join(self._args[2:])
+        self.sockets[idx].send(msg.encode('ascii'))
 
     def func_exit(self):
         """ Close all the connections and then exit"""
@@ -100,7 +101,10 @@ class Peer:
             s.listen(100)
             # print("Checking messages from {}".format(self.connections))
             c, addr = s.accept()
+            # need to use the data in addr to add the ip and port to the list of connections
+            # if they are not already inside the list of connections
             print(f"Data received {c} \n {addr}")
+
             msg = c.recv(100)
             print(msg.decode("ascii"))
             c.close()
