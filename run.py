@@ -1,13 +1,9 @@
 from threading import Thread
 import socket
 import argparse
-import time
 import selectors
-import libserver
-import libclient
-import traceback
+import types
 
-sel = selectors.DefaultSelector()
 
 
 class Peer:
@@ -20,6 +16,9 @@ class Peer:
     timeout = 2
 
     def __init__(self, port):
+
+        self.client_sel = selectors.DefaultSelector()
+        self.server_sel = selectors.DefaultSelector()
 
         # Used to get the real ip address of this machine
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -35,35 +34,19 @@ class Peer:
         self.run()
 
     def run(self):
-
         try:
             while self.is_running:
-                events = sel.select(timeout=1)
+                # events = self.client_sel.select(timeout=1)
                 self._input = input(">> ")
                 self._args = self._input.split(' ')
                 if self._args[0] not in self._available_commands:
                     print("Invalid command '{}' - type 'help' to get the available commands".format(self._input))
                 else:
                     getattr(self, 'func_' + self._args[0])()
-
-                for key, mask in events:
-                    message = key.data
-                    try:
-                        # This is the part that outputs the message that we received
-                        message.process_events(mask)
-                    except Exception:
-                        print(
-                            "main: error: exception for",
-                            f"{message.addr}:\n{traceback.format_exc()}",
-                        )
-                        message.close()
-                # Check for a socket being monitored to continue.
-                if not sel.get_map():
-                    break
         except KeyboardInterrupt:
             print("caught keyboard interrupt, exiting")
         finally:
-            sel.close()
+            self.client_sel.close()
 
     def func_help(self):
         print("Command\t\t\t\t\tDescription")
@@ -82,37 +65,14 @@ class Peer:
     def func_myport(self):
         print(f"My Port is {self.my_port}")
 
-    def create_request(self, action, value):
-        if action == "message":
-            return dict(
-                type="text/json",
-                encoding="utf-8",
-                content=dict(action=action, value=value),
-            )
-        else:
-            return dict(
-                type="binary/custom-client-binary-type",
-                encoding="binary",
-                content=bytes(action + value, encoding="utf-8"),
-            )
-
     def func_connect(self):
-
-        # this part seems to need a little more
-        # I think it was designed to be search and then what we're searching for
-        # but we want to make it useable for a simple chat application
-        request = self.create_request("message", "first message")
-
         addr = (self._args[1], int(self._args[2]))
         print("starting connection to", addr)
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.setblocking(False)
         sock.connect_ex(addr)
-        events = selectors.EVENT_READ | selectors.EVENT_WRITE
-        message = libclient.Message(sel, sock, addr, request)
-        sel.register(sock, events, data=message)
         self.sockets.append(sock)
-        self.connections.append((addr[0], int(addr[1])))
+        self.connections.append(addr)
 
     def func_list(self):
         """ Print all active connections """
@@ -134,31 +94,43 @@ class Peer:
 
         print(f"Terminated {self._args}")
 
+    def service_client_connection(self, key, mask):
+        sock = key.fileobj
+        data = key.data
+        if mask & selectors.EVENT_READ:
+            recv_data = sock.recv(1024)  # Should be ready to read
+            if recv_data:
+                print("received", repr(recv_data), "from connection", data.connid)
+                data.recv_total += len(recv_data)
+            if not recv_data or data.recv_total == data.msg_total:
+                print("closing connection", data.connid)
+                self.client_sel.unregister(sock)
+                sock.close()
+        if mask & selectors.EVENT_WRITE:
+            if not data.outb and data.messages:
+                data.outb = data.messages.pop(0)
+            if data.outb:
+                print("sending", repr(data.outb), "to connection", data.connid)
+                sent = sock.send(data.outb)  # Should be ready to write
+                data.outb = data.outb[sent:]
+
     def func_send(self):
+        idx = int(self._args[1])
+        message = " ".join(self._args[2:])
 
-        # I added this, it may not belong
-        events = sel.select(timeout=1)
+        data = types.SimpleNamespace(
+            connid=idx,
+            msg_total=len(message),
+            recv_total=0,
+            messages=list(message.encode('utf-8')),
+            outb=b"",
+        )
 
+        self.client_sel.register(self.sockets[idx], selectors.EVENT_WRITE, data=data)
+
+        events = self.client_sel.select(timeout=1)
         for key, mask in events:
-            message = key.data
-            try:
-                message.process_events(mask)
-            except Exception:
-                print(
-                    "main: error: exception for",
-                    f"{message.addr}:\n{traceback.format_exc()}",
-                )
-                message.close()
-        # # Check for a socket being monitored to continue.
-        # This also may be necessary
-        # if not sel.get_map():
-        #     break
-
-        # """ Send a message to a specific connection id"""
-        # idx = int(self._args[1])
-        # msg = " ".join(self._args[2:])
-        #
-        # self.sockets[idx].send(msg.encode('ascii'))
+            self.service_client_connection(key, mask)
 
     def func_exit(self):
         """ Close all the connections and then exit"""
@@ -170,85 +142,52 @@ class Peer:
 
     def accept_wrapper(self, sock):
         conn, addr = sock.accept()  # Should be ready to read
-        print("accepted connection from", addr)
+        print('accepted connection from', addr)
         conn.setblocking(False)
-        message = libserver.Message(sel, conn, addr)
-        sel.register(conn, selectors.EVENT_READ, data=message)
+        data = types.SimpleNamespace(addr=addr, inb=b'', outb=b'')
+        events = selectors.EVENT_READ | selectors.EVENT_WRITE
+        self.server_sel.register(conn, events, data=data)
+
+    def service_server_connection(self, key, mask):
+        sock = key.fileobj
+        data = key.data
+        if mask & selectors.EVENT_READ:
+            recv_data = sock.recv(1024)  # Should be ready to read
+            if recv_data:
+                data.outb += recv_data
+            else:
+                print("closing connection to", data.addr)
+                self.server_sel.unregister(sock)
+                sock.close()
+        if mask & selectors.EVENT_WRITE:
+            if data.outb:
+                print("echoing", repr(data.outb), "to", data.addr)
+                sent = sock.send(data.outb)  # Should be ready to write
+                data.outb = data.outb[sent:]
 
     def check_inbox(self):
         """ Where the server is hosted"""
+
         lsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         # Avoid bind() exception: OSError: [Errno 48] Address already in use
         lsock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         lsock.bind(('0.0.0.0', int(self.my_port)))
         lsock.listen()
         lsock.setblocking(False)
-        sel.register(lsock, selectors.EVENT_READ, data=None)
-
+        self.server_sel.register(lsock, selectors.EVENT_READ, data=None)
         try:
             while self.is_running:
-
-                events = sel.select(timeout=None)
+                events = self.server_sel.select(timeout=None)
                 for key, mask in events:
                     if key.data is None:
                         self.accept_wrapper(key.fileobj)
                     else:
-                        message = key.data
-                        try:
-                            message.process_events(mask)
-                        except Exception:
-                            print(
-                                "main: error: exception for",
-                                f"{message.addr}:\n{traceback.format_exc()}",
-                            )
-                            message.close()
+                        self.service_server_connection(key, mask)
         except KeyboardInterrupt:
             print("caught keyboard interrupt, exiting")
         finally:
-            sel.close()
+            self.server_sel.close()
         exit(0)
-
-    #     """ Since the connection is thrown away I might be able to get away with this"""
-    #     # print("after listen")
-    #     # print("Checking messages from {}".format(self.connections))
-    #     try:
-    #         # print("before accept")
-    #         c, addr = s.accept()
-    #         # print("after accept")
-    #         # print(f"Data received {c} \n {addr}")
-    #         # if addr is not None and (c, addr) not in self.sockets:
-    #         #     self.connections.append([addr[0], addr[1]])
-    #         #     self.sockets.append(s)
-    #         #     addr = None
-    #     except Exception as e:
-    #             print(e)
-    #     else:
-    #         # print("before recv")
-    #         msg = c.recv(100).decode("ascii")
-    #         # print("after recv")
-    #         if msg:
-    #             print(f"Message received from {addr[0]}")
-    #             print(f"Sender's Port: {addr[1]}")
-    #             print(f"Message: {msg}")
-    #         """
-    #         There may be use case here for this, not sure yet
-    #         I'm imagining parsing the messages from other peers
-    #         to call certain functions.
-    #         """
-    #         if "terminated" in msg:
-    #             idx = self.connections.index(addr[0])
-    #             getattr(self, 'func_' + self._args[0])(idx)
-    #
-    #         # if self._args[0] not in self._available_commands:
-    #         #     print("Invalid command '{}' - type 'help' to get the available commands".format(self._input))
-    #         # else:
-    #     finally:
-    #         # theory one, maybe i do need to close the connection each time?
-    #         pass
-    # # need to use the data in addr to add the ip and port to the list of connections
-    # # if they are not already inside the list of connections
-    #
-    # exit(0)
 
 
 if __name__ == "__main__":
