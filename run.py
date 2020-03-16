@@ -172,7 +172,7 @@ class Peer:
         self.server_sel.register(lsock, selectors.EVENT_READ, data=None)
         try:
             while self.is_running:
-                events = self.server_sel.select(timeout=None)
+                events = self.server_sel.select(timeout=1)
                 for key, mask in events:
                     if key.data is None:
                         self.accept_wrapper(key.fileobj)
