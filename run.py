@@ -1,5 +1,7 @@
 # first of all import the socket library
-import socket, argparse
+import socket
+import argparse
+
 
 def run_client():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -9,6 +11,7 @@ def run_client():
     msg = s.recv(1024)
     print(msg.decode('ascii'))
     s.close()
+
 
 def run_server():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
