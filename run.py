@@ -5,7 +5,6 @@ import selectors
 import types
 
 
-
 class Peer:
     _args = ""
     _available_commands = ['help', 'myip', 'myport', 'connect', 'list', 'terminate', 'send', 'exit']
@@ -16,8 +15,7 @@ class Peer:
     timeout = 2
 
     def __init__(self, port):
-
-        self.client_sel = selectors.DefaultSelector()
+        """ Initialize Things"""
         self.server_sel = selectors.DefaultSelector()
 
         # Used to get the real ip address of this machine
@@ -32,6 +30,7 @@ class Peer:
         t.start()
         # Run the client
         self.run()
+        exit(0)
 
     def run(self):
         try:
@@ -45,8 +44,6 @@ class Peer:
                     getattr(self, 'func_' + self._args[0])()
         except KeyboardInterrupt:
             print("caught keyboard interrupt, exiting")
-        finally:
-            self.client_sel.close()
 
     def func_help(self):
         print("Command\t\t\t\t\tDescription")
@@ -66,13 +63,22 @@ class Peer:
         print(f"My Port is {self.my_port}")
 
     def func_connect(self):
-        addr = (self._args[1], int(self._args[2]))
-        print("starting connection to", addr)
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.setblocking(False)
-        sock.connect_ex(addr)
-        self.sockets.append(sock)
-        self.connections.append(addr)
+        try:
+            addr = (self._args[1], int(self._args[2]))
+        except IndexError:
+            print("You're missing some arguments for the connect command. Type help to see what arguments it requires.")
+        else:
+            if addr in self.connections:
+                print("You are already connected to that peer. No duplicates allowed!")
+                """ Comment this out if testing multiple user functionality on the same machine! """
+            # elif addr[0] == self.my_ip:
+            #     print("Self-connections are not allowed!")
+            else:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.setblocking(False)
+                sock.connect_ex(addr)
+                self.sockets.append(sock)
+                self.connections.append(addr)
 
     def func_list(self):
         """ Print all active connections """
@@ -80,67 +86,46 @@ class Peer:
         for i, conn in enumerate(self.connections):
             print(f"{i}:\t{conn[0]}\t{conn[1]}")
 
-    def func_terminate(self, idx=False):
+    def func_terminate(self):
         """ Close a connection specified by the connection id """
-        # When a peer terminates their connection
-        if not idx:
+        try:
             idx = int(self._args[1])
-            term_msg = f"{self.my_ip} has terminated their connection."
-            self.sockets[idx].send(term_msg)
-        # When the server terminates a connection
-        self.sockets[idx].close()
-        self.sockets.pop(idx)
-        self.connections.pop(idx)
-
-        print(f"Terminated {self._args}")
-
-    def service_client_connection(self, key, mask):
-        sock = key.fileobj
-        data = key.data
-        if mask & selectors.EVENT_READ:
-            recv_data = sock.recv(1024)  # Should be ready to read
-            if recv_data:
-                print("received", repr(recv_data), "from connection", data.connid)
-                data.recv_total += len(recv_data)
-            if not recv_data or data.recv_total == data.msg_total:
-                print("closing connection", data.connid)
-                self.client_sel.unregister(sock)
-                sock.close()
-        if mask & selectors.EVENT_WRITE:
-            if not data.outb and data.messages:
-                data.outb = data.messages.pop(0)
-            if data.outb:
-                print("sending", repr(data.outb), "to connection", data.connid)
-                sent = sock.send(data.outb)  # Should be ready to write
-                data.outb = data.outb[sent:]
+        except IndexError:
+            print("You're missing some arguments for the terminate command. Type help to see what arguments it requires.")
+        else:
+            try:
+                self.sockets[idx].send(f"{self.my_ip} has terminated their connection!".encode())
+                self.sockets[idx].close()
+                self.sockets.pop(idx)
+                self.connections.pop(idx)
+                print(f"Terminated {self._args}")
+            except IndexError:
+                print(f"Index {idx} is not available. Type list to see what connections are available.")
 
     def func_send(self):
-        idx = int(self._args[1])
-        message = " ".join(self._args[2:])
-
-        data = types.SimpleNamespace(
-            connid=idx,
-            msg_total=len(message),
-            recv_total=0,
-            messages=list(message.encode('utf-8')),
-            outb=b"",
-        )
-
-        self.client_sel.register(self.sockets[idx], selectors.EVENT_WRITE, data=data)
-
-        events = self.client_sel.select(timeout=1)
-        for key, mask in events:
-            self.service_client_connection(key, mask)
+        """ Send a message to the specified connection. """
+        try:
+            idx = int(self._args[1])
+        except IndexError:
+            print("You're missing some arguments for the send command. Type help to see what arguments it requires.")
+        else:
+            message = " ".join(self._args[2:])
+            try:
+                self.sockets[idx].send(message.encode())
+            except IndexError:
+                print(f"Index {idx} is not available. Type list to see what connections are available.")
 
     def func_exit(self):
-        """ Close all the connections and then exit"""
+        """ Close all the connections and then exit. """
         # close all the sockets
         for s in self.sockets:
             s.close()
         self.is_running = False
         exit(0)
+        print("after exit(0) in exit function")
 
     def accept_wrapper(self, sock):
+        """ Helper function for the server. Accepts connections from peers. """
         conn, addr = sock.accept()  # Should be ready to read
         print('accepted connection from', addr)
         conn.setblocking(False)
@@ -149,6 +134,7 @@ class Peer:
         self.server_sel.register(conn, events, data=data)
 
     def service_server_connection(self, key, mask):
+        """ Helps manage multiple connections at the same time """
         sock = key.fileobj
         data = key.data
         if mask & selectors.EVENT_READ:
@@ -161,13 +147,22 @@ class Peer:
                 sock.close()
         if mask & selectors.EVENT_WRITE:
             if data.outb:
-                print("echoing", repr(data.outb), "to", data.addr)
-                sent = sock.send(data.outb)  # Should be ready to write
-                data.outb = data.outb[sent:]
+                print(f"Message received from {data.addr[0]}")
+                print(f"Sender's Port: {data.addr[1]}")
+                print(f"{data.outb.decode()}")
+                # print("echoing", repr(data.outb), "to", data.addr)
+                try:
+                    sent = sock.send(data.outb)  # Should be ready to write
+                    data.outb = data.outb[sent:]
+
+                    """ The following exceptions catch errors when a remote peer closes their connection.  """
+                except ConnectionResetError:
+                    pass
+                except OSError:
+                    pass
 
     def check_inbox(self):
         """ Where the server is hosted"""
-
         lsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         # Avoid bind() exception: OSError: [Errno 48] Address already in use
         lsock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
