@@ -119,6 +119,7 @@ class Peer:
         """ Close all the connections and then exit. """
         # close all the sockets
         for s in self.sockets:
+            s.send(f"{self.my_ip} has terminated their connection!".encode())
             s.close()
         self.is_running = False
         exit(0)
